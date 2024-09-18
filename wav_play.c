@@ -61,11 +61,13 @@ static struct {
   WaveFile wave_file_new;
   time_t last_modification;
   int frame;
+  bool play;
   sg_pass_action pass_action;
 } state = {
     .path = NULL,
     .wave_file = (WaveFile){},
     .frame = 0,
+    .play = true,
     .pass_action =
         {
             .colors[0] =
@@ -92,15 +94,16 @@ static void audio_cb(float *buffer, int num_frames, int num_channels,
     // t = 0.025f * sinf(220.0f * 2.0f * M_PI * t);
     for (int j = 0; j < num_channels; ++j)
       buffer[i * num_channels + j] = 0.0f;
-    if (state.wave_file.sample_data && state.wave_file.frame_count > 0) {
+
+    if (state.play && state.wave_file.sample_data &&
+        state.wave_file.frame_count > 0) {
       int o = (state.frame % state.wave_file.frame_count);
       if (o < state.wave_file.frame_count)
         for (int j = 0; j < num_channels; ++j)
           buffer[i * num_channels + j] +=
               state.wave_file.sample_data[o * state.wave_file.channels];
+      ++state.frame;
     }
-
-    ++state.frame;
   }
 }
 
@@ -144,9 +147,13 @@ static void frame(void) {
     f = state.wave_file.frame_count - f;
     int s = f / state.wave_file.sample_rate;
     int m = s / 60;
-    s = s % 60;
+    s %= 60;
+
+    int ss = state.wave_file.frame_count / state.wave_file.sample_rate;
+    int mm = ss / state.wave_file.sample_rate;
+    ss %= 60;
     sdtx_color3b(0x43, 0x36, 0xf4);
-    sdtx_printf("\n -%0.2d:%0.2d", m, s);
+    sdtx_printf("\n -%0.2d:%0.2d (%0.2d:%0.2d)", m, s, mm, ss);
     sdtx_printf("\n %s", ctime(&state.last_modification));
   }
 
@@ -187,6 +194,19 @@ static void cleanup(void) {
   sg_shutdown();
 }
 
+void events(const sapp_event *e) {
+  if ((e->type == SAPP_EVENTTYPE_KEY_DOWN) && !e->key_repeat) {
+    switch (e->key_code) {
+    case SAPP_KEYCODE_SPACE:
+      state.play = !state.play;
+      state.frame = 0;
+      break;
+    default:
+      break;
+    }
+  }
+}
+
 int main(int argc, char *argv[]) {
 
   if (argc > 1)
@@ -195,10 +215,10 @@ int main(int argc, char *argv[]) {
       .init_cb = init,
       .frame_cb = frame,
       .cleanup_cb = cleanup,
-      // .event_cb = __dbgui_event,
+      .event_cb = events,
       .width = 600,
       .height = 200,
-      .window_title = "debugtext-sapp",
+      .window_title = "loop",
       .icon.sokol_default = true,
       .logger.func = slog_func,
   });
